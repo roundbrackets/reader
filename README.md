@@ -54,9 +54,17 @@ multipass shell reader
 ./run.sh
 ```
 
-`install.sh` installs Node.js and Chromium. `run.sh` starts the server. The first startup takes a moment while Chromium initialises.
+`install.sh` installs Node.js, Chromium, and `avahi-daemon`. `run.sh` starts the server. The first startup takes a moment while Chromium initialises.
 
 ### Use the reader
+
+The VM announces itself via mDNS, so you can open it by name on any device that supports `.local` (macOS, iOS, most Linux):
+
+```
+http://reader.local:3000
+```
+
+If `.local` doesn't work (some Android versions), fall back to the IP:
 
 ```bash
 multipass info reader   # Look for the second IP — that's the bridged LAN IP
