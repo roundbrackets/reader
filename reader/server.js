@@ -34,6 +34,11 @@ const MAX_BODY_BYTES = 20 * 1024 * 1024; // 20 MB
 
 app.use(express.static(path.join(__dirname, 'public')));
 
+app.use((req, _res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  next();
+});
+
 // ── SSRF protection ──────────────────────────────────────────────────────────
 
 const PRIVATE_RANGES = [
@@ -87,6 +92,7 @@ app.get('/read', async (req, res) => {
     return res.send(errorPage('That address is not reachable.'));
   }
 
+  console.log(`[read] fetching: ${parsed.href}`);
   let response;
   try {
     response = await fetch(parsed.href, {
@@ -102,8 +108,10 @@ app.get('/read', async (req, res) => {
     });
   } catch (err) {
     if (err.type === 'request-timeout') {
+      console.error(`[read] timeout: ${parsed.href}`);
       return res.send(errorPage('The request timed out. The site may be slow or unreachable.'));
     }
+    console.error(`[read] fetch error: ${err.message}`);
     return res.send(errorPage('Could not reach that address. Check the URL and try again.'));
   }
 
@@ -116,30 +124,38 @@ app.get('/read', async (req, res) => {
   }
 
   if (!response.ok) {
+    console.error(`[read] HTTP ${response.status} for: ${parsed.href}`);
     return res.send(
       errorPage(`The page returned an error: ${response.status} ${response.statusText}.`)
     );
   }
 
+  console.log(`[read] downloading body: ${parsed.href}`);
   let html;
   try {
     html = await response.text();
+    console.log(`[read] body size: ${(Buffer.byteLength(html) / 1024 / 1024).toFixed(1)} MB`);
   } catch (err) {
     if (err.type === 'max-size') {
-      return res.send(errorPage('The page is too large to load (limit: 5 MB).'));
+      console.error(`[read] body too large: ${parsed.href}`);
+      return res.send(errorPage('The page is too large to load (limit: 20 MB).'));
     }
+    console.error(`[read] body read error: ${err.message}`);
     return res.send(errorPage('Failed to read the page content.'));
   }
 
+  console.log(`[read] parsing: ${parsed.href}`);
   let article;
   try {
     const dom = new JSDOM(html, { url: response.url || parsed.href });
     article = new Readability(dom.window.document).parse();
-  } catch {
+  } catch (err) {
+    console.error(`[read] parse error: ${err.message}`);
     return res.send(errorPage('Could not parse the page content.'));
   }
 
   if (!article) {
+    console.error(`[read] readability returned null for: ${parsed.href}`);
     return res.send(
       errorPage(
         'Could not extract readable content from that page. ' +
@@ -147,6 +163,8 @@ app.get('/read', async (req, res) => {
       )
     );
   }
+
+  console.log(`[read] done: ${parsed.href}`);
 
   res.setHeader(
     'Content-Security-Policy',
@@ -386,6 +404,15 @@ function errorPage(message) {
 </main>`
   );
 }
+
+// ── Global error handlers ────────────────────────────────────────────────────
+
+process.on('uncaughtException', (err) => {
+  console.error('[crash] uncaughtException:', err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[crash] unhandledRejection:', reason);
+});
 
 // ── Start ────────────────────────────────────────────────────────────────────
 
