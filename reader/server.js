@@ -214,7 +214,17 @@ app.get('/pdf', async (req, res) => {
     page = await b.newPage();
     await page.goto(sourceUrl, { waitUntil: 'networkidle0', timeout: 30000 });
     console.log('[pdf] page loaded, rendering PDF...');
-    await page.addStyleTag({ content: '.controls-bar { display: none !important; } .pdf-source { display: block !important; }' });
+    await page.addStyleTag({ content: `
+      .controls-bar { display: none !important; }
+      .pdf-source { display: block !important; }
+      .reader { font-size: 14px !important; }
+      html, body { background: #fff !important; color: #000 !important; }
+      .reader, article, .article-content, .article-title, .byline { color: #000 !important; }
+      .article-content a { color: #000 !important; }
+      .article-content blockquote { color: #444 !important; border-color: #ccc !important; }
+      .article-content pre, .article-content code { background: #f0f0f0 !important; color: #000 !important; }
+      .pdf-source, .pdf-source a { color: #444 !important; }
+    ` });
 
     const title = await page.title();
     const safeFilename = title.replace(/[^a-z0-9_\- ]/gi, '').trim() || 'article';

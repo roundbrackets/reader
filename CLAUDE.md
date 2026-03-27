@@ -2,18 +2,32 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Layout
+
+App code lives in `reader/` (the subdirectory). Docs, licence, and repo-level config are at the root.
+
 ## Commands
 
+Run from the `reader/` subdirectory:
+
 ```bash
+cd reader
 npm start          # run the server (http://localhost:3000)
 npm run dev        # run with --watch for auto-restart on file changes
+```
+
+Docker is also run from `reader/`:
+
+```bash
+cd reader
+docker compose up --build
 ```
 
 No build step — Node.js runs `server.js` directly.
 
 ## Architecture
 
-Single-file Express server (`server.js`) with a static CSS file (`public/style.css`).
+Single-file Express server (`reader/server.js`) with a static CSS file (`reader/public/style.css`).
 
 **Request flow for `GET /read?url=...`:**
 1. Validate URL — must be `http`/`https`, not a private/loopback IP (SSRF guard via `dns.lookup`)

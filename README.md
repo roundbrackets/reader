@@ -3,7 +3,7 @@ Reader
 
 Reader is a vibe coded web application intended to make web pages readable for people with low vision. I know! We exist! It strips HTML elements such as ads, frames and overlays and preserves the text, similar to how Safari Reader used to work.
 
-It works for both mobile browsers and desktop browsers.
+It works for both mobile browsers and desktop browsers. Style inspired by AO3's Reversi.
 
 Links are preserved.
 
@@ -37,6 +37,7 @@ multipass networks
 multipass launch --name reader --cpus 1 --memory 512M --disk 4G --network en0 20.04
 
 # Copy the project into the VM
+cd reader
 multipass transfer -r . reader:/home/ubuntu
 
 # Here's your VM!

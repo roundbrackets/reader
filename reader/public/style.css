@@ -4,39 +4,28 @@
   --line-height: 1.8;
   --margin: 5%;
 
-  --bg: #fafaf8;
-  --text: #1a1a1a;
-  --link: #0055cc;
-  --muted: #666;
-  --controls-bg: #f0f0ec;
-  --controls-border: #ccc;
-  --accent: #0055cc;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #1a1a1a;
-    --text: #e8e8e4;
-    --link: #88aaff;
-    --muted: #aaa;
-    --controls-bg: #252522;
-    --controls-border: #444;
-    --accent: #88aaff;
-  }
+  /* Reversi palette */
+  --bg: #333;
+  --text: #eee;
+  --link: #5998D6;
+  --muted: #999;
+  --controls-bg: #222;
+  --controls-border: #555;
+  --accent: #5998D6;
 }
 
 *, *::before, *::after { box-sizing: border-box; }
 
 html {
-  font-size: var(--font-size);
-  line-height: var(--line-height);
   background: var(--bg);
   color: var(--text);
 }
 
 body {
   margin: 0;
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: 'Lucida Grande', 'Lucida Sans Unicode', Verdana, Helvetica, sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
 }
 
 /* ── Home page ─────────────────────────────────────────────────────────────── */
@@ -48,20 +37,21 @@ body {
 }
 
 .home h1 {
-  font-size: 2.5rem;
+  font-size: 1.75rem;
   margin-bottom: 0.2em;
 }
 
 .tagline {
   color: var(--muted);
   margin-bottom: 2rem;
-  font-size: 1.05rem;
+  font-size: 0.95rem;
 }
 
 .home label {
   display: block;
   font-weight: 600;
   margin-bottom: 0.4em;
+  font-size: 0.9rem;
 }
 
 .input-row {
@@ -71,7 +61,7 @@ body {
 
 .home input[type="url"] {
   flex: 1;
-  font-size: 1rem;
+  font-size: 0.95rem;
   padding: 0.6em 0.8em;
   border: 2px solid var(--controls-border);
   border-radius: 6px;
@@ -87,7 +77,7 @@ body {
 }
 
 .home button {
-  font-size: 1rem;
+  font-size: 0.95rem;
   padding: 0.6em 1.4em;
   background: var(--accent);
   color: #fff;
@@ -102,13 +92,9 @@ body {
 .home button:active { opacity: 0.7; }
 
 .error-msg {
-  color: #cc2200;
-  font-size: 1rem;
+  color: #ff7755;
+  font-size: 0.95rem;
   margin-bottom: 1.5rem;
-}
-
-@media (prefers-color-scheme: dark) {
-  .error-msg { color: #ff7755; }
 }
 
 .back-link {
@@ -134,7 +120,7 @@ body {
   max-width: 900px;
   margin: 0 auto;
   flex-wrap: wrap;
-  font-size: 0.82rem;
+  font-size: 13px;
 }
 
 .control-group {
@@ -157,14 +143,14 @@ body {
 .ctrl-val {
   min-width: 3em;
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: 12px;
 }
 
 .ctrl-link {
   color: var(--accent);
   text-decoration: underline;
   white-space: nowrap;
-  font-size: 0.85rem;
+  font-size: 13px;
 }
 
 .ctrl-link:last-child { margin-left: auto; }
@@ -175,7 +161,7 @@ body {
   border: none;
   cursor: pointer;
   color: var(--muted);
-  font-size: 0.75rem;
+  font-size: 12px;
   padding: 0.2em 0.4em;
   border-radius: 4px;
   line-height: 1;
@@ -183,7 +169,7 @@ body {
 
 .ctrl-toggle:hover { color: var(--text); }
 
-/* Minimised state — collapse controls, leave only the toggle strip */
+/* Minimised state */
 .controls-bar.minimised .controls-inner > :not(.ctrl-toggle) {
   display: none;
 }
@@ -204,6 +190,8 @@ body {
 
 .reader {
   padding: 2.5rem var(--margin);
+  font-size: var(--font-size);
+  line-height: var(--line-height);
 }
 
 article {
@@ -266,7 +254,7 @@ article {
 }
 
 .article-content code {
-  font-family: 'Courier New', Courier, monospace;
+  font-family: 'Monaco', 'Consolas', Courier, monospace;
   font-size: 0.88em;
   background: var(--controls-bg);
   padding: 0.15em 0.35em;
@@ -280,6 +268,10 @@ article {
 
 .pdf-source {
   display: none;
+  font-size: 0.8em;
+  color: var(--muted);
+  margin-top: 2em;
+  word-break: break-all;
 }
 
 .ctrl-refetch {
