@@ -29,8 +29,8 @@ async function getBrowser() {
   }
   return browser;
 }
-const FETCH_TIMEOUT_MS = 10000;
-const MAX_BODY_BYTES = 5 * 1024 * 1024; // 5 MB
+const FETCH_TIMEOUT_MS = 60000;
+const MAX_BODY_BYTES = 20 * 1024 * 1024; // 20 MB
 
 app.use(express.static(path.join(__dirname, 'public')));
 
