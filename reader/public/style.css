@@ -278,6 +278,27 @@ article {
   color: var(--muted);
 }
 
+.ctrl-invert {
+  background: none;
+  border: 1px solid var(--controls-border);
+  border-radius: 4px;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 13px;
+  font-family: inherit;
+  padding: 0.15em 0.5em;
+}
+
+.ctrl-invert:hover,
+.ctrl-invert.active {
+  color: var(--text);
+  border-color: var(--text);
+}
+
+html.inverted {
+  filter: invert(1);
+}
+
 /* ── Accessibility ─────────────────────────────────────────────────────────── */
 
 @media (prefers-reduced-motion: reduce) {
@@ -290,8 +311,21 @@ article {
 /* ── Mobile ────────────────────────────────────────────────────────────────── */
 
 @media (max-width: 600px) {
-  .controls-inner { gap: 0.7rem; }
-  .control-group input[type="range"] { width: 64px; }
+  .controls-inner {
+    gap: 0.5rem 1rem;
+  }
+
+  /* Each slider row takes full width so the slider can stretch */
+  .control-group {
+    width: 100%;
+  }
+
+  .control-group input[type="range"] {
+    flex: 1;
+    width: auto;
+    min-width: 0;
+  }
+
   .ctrl-link:last-child { margin-left: 0; }
   .ctrl-toggle { margin-left: 0; }
 }

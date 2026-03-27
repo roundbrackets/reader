@@ -310,7 +310,7 @@ function readerPage(article, originalUrl) {
   <div class="controls-inner">
     <div class="control-group">
       <label for="fs">Text size</label>
-      <input type="range" id="fs" min="14" max="40" step="2" value="20">
+      <input type="range" id="fs" min="12" max="40" step="2" value="20">
       <span class="ctrl-val" id="fs-val">20px</span>
     </div>
     <div class="control-group">
@@ -327,6 +327,7 @@ function readerPage(article, originalUrl) {
     <a href="/" class="ctrl-link">New URL</a>
     <a href="/pdf?url=${esc(originalUrl)}" class="ctrl-link">Save as PDF</a>
     <a href="/refetch?url=${esc(originalUrl)}" class="ctrl-link ctrl-refetch">Re-fetch</a>
+    <button class="ctrl-invert" id="ctrl-invert" aria-label="Invert colors" title="Invert colors">Invert</button>
     <button class="ctrl-toggle" id="ctrl-toggle" aria-label="Minimise controls" title="Minimise controls">▲</button>
   </div>
 </div>
@@ -356,6 +357,11 @@ function readerPage(article, originalUrl) {
   document.getElementById('mg').addEventListener('input', function() {
     root.style.setProperty('--margin', this.value + '%');
     document.getElementById('mg-val').textContent = this.value + '%';
+  });
+
+  document.getElementById('ctrl-invert').addEventListener('click', function() {
+    var inverted = document.documentElement.classList.toggle('inverted');
+    this.classList.toggle('active', inverted);
   });
 
   var bar = document.getElementById('controls-bar');
