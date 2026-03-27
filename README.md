@@ -1,7 +1,7 @@
 Reader
 ======
 
-Reader is a vibe coded web application that strips html elements such as ads and frames from an a webpage and converts it into **low vision friendly** format with sans serif fonts. While it will strip out ads because they overlay and distract, the purpose is for people with low vision to be able to use the fucking internet.
+Reader is a vibe coded web application intended to make web pages readable for people with low vision. I know! We exists! It strips html elements such as ads, frames and overlays and perserves the text, similar to how Safari Reader used to work.
 
 It works for both mobile browsers and desktop browsers.
 
