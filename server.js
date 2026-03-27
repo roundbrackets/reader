@@ -172,10 +172,10 @@ app.get('/refetch', async (req, res) => {
   const rawUrl = (req.query.url || '').trim();
   if (!rawUrl) return res.redirect('/');
 
-  const { error } = parseUrl(rawUrl);
+  const { parsed, error } = parseUrl(rawUrl);
   if (error) return res.send(errorPage(error));
 
-  const hash = crypto.createHash('sha256').update(rawUrl).digest('hex');
+  const hash = crypto.createHash('sha256').update(parsed.href).digest('hex');
   const pdfCachePath = path.join(CACHE_DIR, hash + '.pdf');
   if (fs.existsSync(pdfCachePath)) {
     fs.unlink(pdfCachePath, () => {});
@@ -190,10 +190,10 @@ app.get('/pdf', async (req, res) => {
   const rawUrl = (req.query.url || '').trim();
   if (!rawUrl) return res.redirect('/');
 
-  const { error } = parseUrl(rawUrl);
+  const { parsed, error } = parseUrl(rawUrl);
   if (error) return res.send(errorPage(error));
 
-  const hash = crypto.createHash('sha256').update(rawUrl).digest('hex');
+  const hash = crypto.createHash('sha256').update(parsed.href).digest('hex');
   const cachePath = path.join(CACHE_DIR, hash + '.pdf');
 
   if (fs.existsSync(cachePath)) {
