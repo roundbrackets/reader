@@ -1,0 +1,11 @@
+services:
+  reader:
+    build: .
+    ports:
+      - "3000:3000"
+    volumes:
+      - cache:/app/cache
+    restart: unless-stopped
+
+volumes:
+  cache:
