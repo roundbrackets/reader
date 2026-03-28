@@ -16,7 +16,7 @@ The user uses it by entering a URL in a form.
 iPhone
 ------
 
-<img src="./img/one.png" alt="form" width="200"/>
+<img align="right" src="./img/one.png" alt="form" width="200"/>
 <img src="./img/two.png" alt="AP" width="200"/>
 <img src="./img/three.png" alt="Transformed" width="200"/>
 <img src="./img/four.png" alt="Controls" width="200"/>
