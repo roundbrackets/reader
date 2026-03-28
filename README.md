@@ -18,8 +18,13 @@ iPhone
 
 <img align="left" src="./img/one.png" alt="form" width="200"/>
 <img src="./img/two.png" alt="AP" width="200"/>
-<img src="./img/three.png" alt="Transformed" width="200"/>
+<img align="left" src="./img/three.png" alt="Transformed" width="200"/>
 <img src="./img/four.png" alt="Controls" width="200"/>
+
+Mac OS
+------
+
+<img src="./img/macos_one.png" width="400"/>
 
 How it works
 ------------
