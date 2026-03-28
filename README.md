@@ -24,7 +24,8 @@ iPhone
 Mac OS
 ------
 
-<img src="./img/macos_one.png" width="400"/>
+<img src="./img/mac-os-one.png" width="400"/>
+<img src="./img/mac-os-two.png" width="400"/>
 
 How it works
 ------------
