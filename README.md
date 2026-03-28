@@ -18,6 +18,7 @@ iPhone
 
 <img align="left" src="./img/one.png" alt="form" width="200"/>
 <img src="./img/two.png" alt="AP" width="200"/>
+The Associated Press article has so many pop-ups and overlays you can't even tell it's an article under there.
 <img align="left" src="./img/three.png" alt="Transformed" width="200"/>
 <img src="./img/four.png" alt="Controls" width="200"/>
 
