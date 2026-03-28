@@ -48,7 +48,7 @@ multipass networks
 
 # Launch a VM with bridged networking, any device on your network
 # can use your service
-multipass launch --name reader --cpus 1 --memory 512M --disk 4G --network en0 20.04
+multipass launch --name reader --cpus 1 --memory 1.5G --disk 4G --network en0 20.04
 
 # Copy the project into the VM
 cd reader
