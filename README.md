@@ -13,10 +13,10 @@ The user can:
 
 The user uses it by entering a URL in a form.
 
-![URL goes here](img/one.png "Form")
-![Delightful AP page](img/two.png "Delightful AP article one might want to read")
-![Huh there's text](img/three.png "The actual article")
-![But there's more](img/four.png "Controls")
+![URL goes here](./img/one.png "Form")
+![Delightful AP page](./img/two.png "Delightful AP article one might want to read")
+![Huh there's text](./img/three.png "The actual article")
+![But there's more](./img/four.png "Controls")
 
 How it works
 ------------
