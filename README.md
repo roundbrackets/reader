@@ -17,8 +17,8 @@ iPhone
 ------
 
 |----|----|
-| ![](./img/one.png) | ![](./img/two.png) |
-| ![](./img/three.png) | ![](./img/four.png) |
+| ![Form](./img/one.png) | ![Ugly page](./img/two.png) |
+| ![Readable page](./img/three.png) | ![Controls](./img/four.png) |
 
 How it works
 ------------
