@@ -23,7 +23,11 @@ async function getBrowser() {
     const puppeteer = require('puppeteer');
     browser = await puppeteer.launch({
       executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium-browser',
-      args: ['--no-sandbox', '--disable-setuid-sandbox']
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-blink-features=AutomationControlled',
+      ]
     });
     browser.on('disconnected', () => { browser = null; });
   }
@@ -93,61 +97,126 @@ app.get('/read', async (req, res) => {
   }
 
   console.log(`[read] fetching: ${parsed.href}`);
-  let response;
+  let html;
+  let finalUrl = parsed.href;
+
+  // Try node-fetch first; fall back to Puppeteer for bot-protected pages
+  let usedPuppeteer = false;
   try {
-    response = await fetch(parsed.href, {
+    const response = await fetch(parsed.href, {
       timeout: FETCH_TIMEOUT_MS,
       size: MAX_BODY_BYTES,
       headers: {
         'User-Agent':
           'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 ' +
           '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.5',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Cache-Control': 'max-age=0',
+        'Upgrade-Insecure-Requests': '1',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Sec-Fetch-User': '?1',
+        'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+        'sec-ch-ua-mobile': '?0',
+        'sec-ch-ua-platform': '"macOS"',
       },
     });
+
+    // Check final URL after redirects for SSRF
+    if (response.url && response.url !== parsed.href) {
+      const { parsed: finalParsed, error: finalError } = parseUrl(response.url);
+      if (!finalError && await isPrivate(finalParsed.hostname)) {
+        return res.send(errorPage('That address is not reachable.'));
+      }
+      finalUrl = response.url;
+    }
+
+    if (response.status === 403 || response.status === 429 || response.status === 503) {
+      console.log(`[read] HTTP ${response.status}, will retry with Puppeteer: ${parsed.href}`);
+      throw Object.assign(new Error('bot-block'), { botBlock: true });
+    }
+
+    if (!response.ok) {
+      console.error(`[read] HTTP ${response.status} for: ${parsed.href}`);
+      return res.send(
+        errorPage(`The page returned an error: ${response.status} ${response.statusText}.`)
+      );
+    }
+
+    try {
+      html = await response.text();
+      console.log(`[read] body size: ${(Buffer.byteLength(html) / 1024 / 1024).toFixed(1)} MB`);
+    } catch (err) {
+      if (err.type === 'max-size') {
+        console.error(`[read] body too large: ${parsed.href}`);
+        return res.send(errorPage('The page is too large to load (limit: 20 MB).'));
+      }
+      console.error(`[read] body read error: ${err.message}`);
+      return res.send(errorPage('Failed to read the page content.'));
+    }
   } catch (err) {
-    if (err.type === 'request-timeout') {
+    if (err.botBlock) {
+      // Fall through to Puppeteer below
+    } else if (err.type === 'request-timeout') {
       console.error(`[read] timeout: ${parsed.href}`);
       return res.send(errorPage('The request timed out. The site may be slow or unreachable.'));
-    }
-    console.error(`[read] fetch error: ${err.message}`);
-    return res.send(errorPage('Could not reach that address. Check the URL and try again.'));
-  }
-
-  // Check final URL after redirects for SSRF
-  if (response.url && response.url !== parsed.href) {
-    const { parsed: finalParsed, error: finalError } = parseUrl(response.url);
-    if (!finalError && await isPrivate(finalParsed.hostname)) {
-      return res.send(errorPage('That address is not reachable.'));
+    } else {
+      console.error(`[read] fetch error: ${err.message}`);
+      return res.send(errorPage('Could not reach that address. Check the URL and try again.'));
     }
   }
 
-  if (!response.ok) {
-    console.error(`[read] HTTP ${response.status} for: ${parsed.href}`);
-    return res.send(
-      errorPage(`The page returned an error: ${response.status} ${response.statusText}.`)
-    );
-  }
+  if (!html) {
+    // Puppeteer fallback for bot-protected pages
+    console.log(`[read] fetching via Puppeteer: ${parsed.href}`);
+    usedPuppeteer = true;
+    let page;
+    try {
+      const b = await getBrowser();
+      page = await b.newPage();
+      await page.evaluateOnNewDocument(() => {
+        Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+      });
+      await page.setUserAgent(
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 ' +
+        '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      );
+      await page.setViewport({ width: 1280, height: 800 });
+      const puppeteerResponse = await page.goto(parsed.href, { waitUntil: 'networkidle2', timeout: FETCH_TIMEOUT_MS });
 
-  console.log(`[read] downloading body: ${parsed.href}`);
-  let html;
-  try {
-    html = await response.text();
-    console.log(`[read] body size: ${(Buffer.byteLength(html) / 1024 / 1024).toFixed(1)} MB`);
-  } catch (err) {
-    if (err.type === 'max-size') {
-      console.error(`[read] body too large: ${parsed.href}`);
-      return res.send(errorPage('The page is too large to load (limit: 20 MB).'));
+      // SSRF check on final URL after redirects
+      const finalPuppeteerUrl = page.url();
+      if (finalPuppeteerUrl && finalPuppeteerUrl !== parsed.href) {
+        const { parsed: finalParsed, error: finalError } = parseUrl(finalPuppeteerUrl);
+        if (!finalError && await isPrivate(finalParsed.hostname)) {
+          return res.send(errorPage('That address is not reachable.'));
+        }
+        finalUrl = finalPuppeteerUrl;
+      }
+
+      const status = puppeteerResponse ? puppeteerResponse.status() : 0;
+      if (status && status >= 400) {
+        console.error(`[read] Puppeteer HTTP ${status} for: ${parsed.href}`);
+        return res.send(errorPage(`The page returned an error: ${status}.`));
+      }
+
+      html = await page.content();
+      console.log(`[read] Puppeteer body size: ${(Buffer.byteLength(html) / 1024 / 1024).toFixed(1)} MB`);
+    } catch (err) {
+      console.error(`[read] Puppeteer fetch error: ${err.message}`);
+      return res.send(errorPage('Could not reach that address. Check the URL and try again.'));
+    } finally {
+      if (page) await page.close();
     }
-    console.error(`[read] body read error: ${err.message}`);
-    return res.send(errorPage('Failed to read the page content.'));
   }
 
-  console.log(`[read] parsing: ${parsed.href}`);
+  console.log(`[read] parsing: ${parsed.href}${usedPuppeteer ? ' (via Puppeteer)' : ''}`);
   let article;
   try {
-    const dom = new JSDOM(html, { url: response.url || parsed.href });
+    const dom = new JSDOM(html, { url: finalUrl });
     article = new Readability(dom.window.document).parse();
   } catch (err) {
     console.error(`[read] parse error: ${err.message}`);
