@@ -36,6 +36,221 @@ async function getBrowser() {
 const FETCH_TIMEOUT_MS = 60000;
 const MAX_BODY_BYTES = 20 * 1024 * 1024; // 20 MB
 
+// ── Font-based cipher decoding ───────────────────────────────────────────────
+//
+// Some sites (e.g. chrysanthemumgarden.com) obfuscate text using custom woff2
+// fonts as cipher keys. Encoded text is placed in spans with a random
+// font-family name; the font renders each encoded glyph as the correct visual
+// character, so real browsers render it fine but scrapers see gibberish.
+//
+// The woff2 fonts have no PostScript glyph names. We decode by comparing glyph
+// paths (bezier curves) between the cipher font and the page's real fonts.
+// The cipher was built by copying glyphs from a page font into a scrambled
+// code point mapping, so the paths are identical — an exact match gives the
+// decoded character.
+//
+// Flow (Puppeteer path only):
+//   1. After page loads, do one fast page.evaluate() to collect all woff2 URLs
+//      (cipher and reference) using the Performance API — works cross-origin.
+//   2. Close the site's page immediately.
+//   3. Download both sets of fonts in Node.js and compare glyph paths via fontkit.
+//   4. Apply the resulting maps to the HTML before passing to Readability.
+//
+// Also strips hidden "garbage" spans (height:1px, width:0).
+
+// Collect all woff2 URLs the browser loaded (cipher + reference).
+// Uses the Performance API which works cross-origin, avoiding CORS issues with
+// external stylesheets. Cipher @font-face rules (inline CSS) also give us the
+// family→URL mapping needed to label the results.
+async function extractFontUrlsFromPage(page) {
+  return page.evaluate(() => {
+    const CIPHER_NAME = /^[a-zA-Z]{8,12}$/;
+
+    // Get cipher family→URL from inline @font-face rules (same-origin, always works)
+    const cipherFonts = [];
+    for (const sheet of document.styleSheets) {
+      try {
+        for (const rule of sheet.cssRules) {
+          if (!(rule instanceof CSSFontFaceRule)) continue;
+          const family = rule.style.getPropertyValue('font-family').replace(/['"]/g, '').trim();
+          if (!CIPHER_NAME.test(family)) continue;
+          const src = rule.style.getPropertyValue('src') || '';
+          const m = src.match(/url\(['"]?([^'")\s]+\.woff2[^'")\s]*)['"]?\)/);
+          if (m) cipherFonts.push({ family, url: m[1] });
+        }
+      } catch (_) {}
+    }
+
+    // Get ALL woff2 URLs actually downloaded by the browser (cross-origin safe)
+    const allLoaded = performance.getEntriesByType('resource')
+      .filter(r => r.name.includes('.woff2'))
+      .map(r => r.name);
+
+    // Reference fonts = loaded woff2s that are not cipher fonts
+    const cipherUrls = new Set(cipherFonts.map(f => f.url));
+    const refUrls = allLoaded.filter(url => !cipherUrls.has(url));
+
+    return { cipherFonts, refUrls };
+  });
+}
+
+// Build cipher maps by comparing glyph paths between cipher and reference fonts.
+// The cipher font glyphs are identical copies of glyphs from a reference font,
+// just at different code points — so path comparison is exact.
+const glyphPathCache = new Map(); // url → { letter: fingerprint }
+
+async function buildFontCipherMapsFromPaths(fontUrls) {
+  if (!fontUrls || fontUrls.cipherFonts.length === 0 || fontUrls.refUrls.length === 0) return null;
+
+  const fontkit = require('fontkit');
+  const letters = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+
+  function glyphFingerprint(glyph, unitsPerEm) {
+    try {
+      const cmds = glyph.path.commands;
+      if (!cmds || cmds.length === 0) return null;
+      const s = 1000 / unitsPerEm;
+      return cmds.map(c => {
+        switch (c.command) {
+          case 'moveTo':           return `M${Math.round(c.x*s)},${Math.round(c.y*s)}`;
+          case 'lineTo':           return `L${Math.round(c.x*s)},${Math.round(c.y*s)}`;
+          case 'bezierCurveTo':    return `C${Math.round(c.x1*s)},${Math.round(c.y1*s)},${Math.round(c.x2*s)},${Math.round(c.y2*s)},${Math.round(c.x*s)},${Math.round(c.y*s)}`;
+          case 'quadraticCurveTo': return `Q${Math.round(c.x1*s)},${Math.round(c.y1*s)},${Math.round(c.x*s)},${Math.round(c.y*s)}`;
+          case 'closePath':        return 'Z';
+          default:                 return c.command;
+        }
+      }).join('');
+    } catch (_) { return null; }
+  }
+
+  async function downloadAndParse(url) {
+    const resp = await fetch(url, { timeout: 10000 });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    return fontkit.create(await resp.buffer());
+  }
+
+  // Build reference fingerprint table: path_string → letter
+  const refFingerprints = new Map();
+  for (const url of fontUrls.refUrls) {
+    try {
+      const font = await downloadAndParse(url);
+      let added = 0;
+      for (const ch of letters) {
+        const glyph = font.glyphForCodePoint(ch.charCodeAt(0));
+        if (!glyph || glyph.id === 0) continue;
+        const fp = glyphFingerprint(glyph, font.unitsPerEm);
+        if (fp && !refFingerprints.has(fp)) { refFingerprints.set(fp, ch); added++; }
+      }
+      console.log(`[cipher] ref font ${url.split('/').pop()}: ${added} glyphs indexed`);
+    } catch (e) {
+      console.error(`[cipher] ref font error (${url.split('/').pop()}): ${e.message}`);
+    }
+  }
+
+  if (refFingerprints.size === 0) return null;
+
+  // Match each cipher font's glyphs to the reference fingerprints
+  const maps = {};
+  for (const { family, url } of fontUrls.cipherFonts) {
+    try {
+      const font = await downloadAndParse(url);
+      const map = {};
+      for (const ch of letters) {
+        const glyph = font.glyphForCodePoint(ch.charCodeAt(0));
+        if (!glyph || glyph.id === 0) continue;
+        const fp = glyphFingerprint(glyph, font.unitsPerEm);
+        if (fp) {
+          const decoded = refFingerprints.get(fp);
+          if (decoded) map[ch] = decoded;
+        }
+      }
+      console.log(`[cipher] ${family}: ${Object.keys(map).length} chars mapped via path comparison`);
+      maps[family] = map;
+    } catch (e) {
+      console.error(`[cipher] cipher font error (${family}): ${e.message}`);
+    }
+  }
+
+  return Object.keys(maps).length > 0 ? maps : null;
+}
+
+// Apply cipher maps to HTML: strip garbage spans and decode cipher spans.
+// prebuiltMaps (from buildPuppeteerCipherMaps) takes priority; otherwise
+// falls back to fontkit parsing of the woff2 files (works if they have glyph names).
+async function decodeCipherHtml(html, prebuiltMaps) {
+  // Strip hidden garbage spans injected to confuse scrapers
+  html = html.replace(
+    /<span[^>]+style="[^"]*height:\s*1px[^"]*"[^>]*>[\s\S]*?<\/span>/gi,
+    ''
+  );
+
+  // Determine which cipher maps to use
+  let cipherMaps = prebuiltMaps || {};
+
+  if (!prebuiltMaps || Object.keys(prebuiltMaps).length === 0) {
+    // Fallback: try fontkit (works for fonts that include PostScript glyph names)
+    const fontFaceMap = {};
+    const fontFaceRe =
+      /font-family:\s*['"]([^'"]+)['"]\s*;[\s\S]*?src:\s*url\(['"]([^'"]+\.woff2)['"]\)/gi;
+    let m;
+    while ((m = fontFaceRe.exec(html)) !== null) {
+      fontFaceMap[m[1]] = m[2];
+    }
+    if (Object.keys(fontFaceMap).length > 0) {
+      const fontCipherCache = require._fontCipherCache || (require._fontCipherCache = new Map());
+      await Promise.all(Object.entries(fontFaceMap).map(async ([family, url]) => {
+        try {
+          if (fontCipherCache.has(url)) {
+            cipherMaps[family] = fontCipherCache.get(url);
+            return;
+          }
+          const resp = await fetch(url, { timeout: 10000 });
+          if (!resp.ok) return;
+          const buf = await resp.buffer();
+          const fontkit = require('fontkit');
+          const font = fontkit.create(buf);
+          const map = {};
+          for (let code = 0x20; code < 0x7F; code++) {
+            const glyph = font.glyphForCodePoint(code);
+            if (!glyph || glyph.id === 0) continue;
+            const name = glyph.name;
+            if (!name) continue;
+            let decoded = null;
+            if (name.length === 1 && /[a-zA-Z0-9]/.test(name)) decoded = name;
+            else if (/^uni([0-9A-Fa-f]{4})$/i.test(name))
+              decoded = String.fromCharCode(parseInt(name.slice(3), 16));
+            if (decoded) map[String.fromCharCode(code)] = decoded;
+          }
+          fontCipherCache.set(url, map);
+          cipherMaps[family] = map;
+        } catch (e) {
+          console.error(`[cipher] fontkit fallback failed for ${family}: ${e.message}`);
+        }
+      }));
+    }
+  }
+
+  if (Object.keys(cipherMaps).length === 0) return html;
+
+  // Log mapped char counts
+  for (const [family, map] of Object.entries(cipherMaps)) {
+    const count = Object.keys(map).length;
+    if (count > 0) console.log(`[cipher] ${family}: ${count} chars mapped`);
+  }
+
+  // Decode cipher spans
+  html = html.replace(
+    /<span\s+style="font-family:\s*([^";]+?)\s*;?\s*">([\s\S]*?)<\/span>/gi,
+    (match, family, text) => {
+      const cipherMap = cipherMaps[family.trim()];
+      if (!cipherMap || Object.keys(cipherMap).length === 0) return match;
+      return text.split('').map(c => cipherMap[c] || c).join('');
+    }
+  );
+
+  return html;
+}
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.use((req, _res, next) => {
@@ -94,6 +309,13 @@ app.get('/read', async (req, res) => {
 
   if (await isPrivate(parsed.hostname)) {
     return res.send(errorPage('That address is not reachable.'));
+  }
+
+  const hash = crypto.createHash('sha256').update(parsed.href).digest('hex');
+  const htmlCachePath = path.join(CACHE_DIR, hash + '.html');
+  if (fs.existsSync(htmlCachePath)) {
+    console.log(`[read] cache hit: ${parsed.href}`);
+    return res.sendFile(htmlCachePath);
   }
 
   console.log(`[read] fetching: ${parsed.href}`);
@@ -169,6 +391,9 @@ app.get('/read', async (req, res) => {
     }
   }
 
+  let puppeteerCipherMaps = null;
+  let fontUrlsForDecode = null;
+
   if (!html) {
     // Puppeteer fallback for bot-protected pages
     console.log(`[read] fetching via Puppeteer: ${parsed.href}`);
@@ -205,12 +430,38 @@ app.get('/read', async (req, res) => {
 
       html = await page.content();
       console.log(`[read] Puppeteer body size: ${(Buffer.byteLength(html) / 1024 / 1024).toFixed(1)} MB`);
+      fontUrlsForDecode = await extractFontUrlsFromPage(page);
     } catch (err) {
       console.error(`[read] Puppeteer fetch error: ${err.message}`);
       return res.send(errorPage('Could not reach that address. Check the URL and try again.'));
     } finally {
       if (page) await page.close();
     }
+
+    if (fontUrlsForDecode) {
+      try {
+        puppeteerCipherMaps = await buildFontCipherMapsFromPaths(fontUrlsForDecode);
+      } catch (e) {
+        console.error(`[cipher] path comparison failed: ${e.message}`);
+      }
+    }
+  }
+
+  // Save raw HTML for debugging cipher decoding
+  fs.writeFile(path.join(CACHE_DIR, hash + '.raw.html'), html, () => {});
+
+  // Decode font-based cipher spans before parsing (non-fatal if it fails)
+  try {
+    // Log a sample of each cipher map so we can verify the mappings
+    if (puppeteerCipherMaps) {
+      for (const [family, map] of Object.entries(puppeteerCipherMaps)) {
+        const sample = Object.entries(map).slice(0, 10).map(([k, v]) => `${k}→${v}`).join(' ');
+        console.log(`[cipher-map] ${family}: ${sample}`);
+      }
+    }
+    html = await decodeCipherHtml(html, puppeteerCipherMaps);
+  } catch (err) {
+    console.error(`[cipher] decode failed: ${err.message}`);
   }
 
   console.log(`[read] parsing: ${parsed.href}${usedPuppeteer ? ' (via Puppeteer)' : ''}`);
@@ -243,8 +494,7 @@ app.get('/read', async (req, res) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
 
   const rendered = readerPage(article, parsed.href);
-  const hash = crypto.createHash('sha256').update(parsed.href).digest('hex');
-  fs.writeFile(path.join(CACHE_DIR, hash + '.html'), rendered, () => {});
+  fs.writeFile(htmlCachePath, rendered, () => {});
   res.send(rendered);
 });
 
@@ -263,6 +513,11 @@ app.get('/refetch', async (req, res) => {
   if (error) return res.send(errorPage(error));
 
   const hash = crypto.createHash('sha256').update(parsed.href).digest('hex');
+  const htmlCachePath = path.join(CACHE_DIR, hash + '.html');
+  if (fs.existsSync(htmlCachePath)) {
+    fs.unlink(htmlCachePath, () => {});
+    console.log(`[refetch] deleted cached HTML for: ${rawUrl}`);
+  }
   const pdfCachePath = path.join(CACHE_DIR, hash + '.pdf');
   if (fs.existsSync(pdfCachePath)) {
     fs.unlink(pdfCachePath, () => {});
